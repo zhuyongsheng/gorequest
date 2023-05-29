@@ -438,6 +438,14 @@ func (s *SuperAgent) AddCookie(c *http.Cookie) *SuperAgent {
 	return s
 }
 
+// SetCookie is a shortcut to AddCookie
+func (s *SuperAgent) SetCookie(name, value string) *SuperAgent {
+	return s.AddCookie(&http.Cookie{
+		Name:  name,
+		Value: value,
+	})
+}
+
 // AddCookies is a convenient method to add multiple cookies
 func (s *SuperAgent) AddCookies(cookies []*http.Cookie) *SuperAgent {
 	s.Cookies = append(s.Cookies, cookies...)
