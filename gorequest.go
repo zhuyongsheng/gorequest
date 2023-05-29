@@ -664,6 +664,11 @@ func (s *SuperAgent) RedirectPolicy(policy func(req Request, via []Request) erro
 	return s
 }
 
+func (s *SuperAgent) SetBounceToRawString(bounceToRawString bool) *SuperAgent {
+	s.BounceToRawString = bounceToRawString
+	return s
+}
+
 // Send function accepts either json string or query strings which is usually used to assign data to POST or PUT method.
 // Without specifying any type, if you give Send with json data, you are doing requesting in json format:
 //
