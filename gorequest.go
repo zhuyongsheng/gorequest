@@ -65,6 +65,7 @@ type superAgentRetryable struct {
 
 // A SuperAgent is a object storing all request data for client.
 type SuperAgent struct {
+	BaseURL              string
 	Url                  string
 	Method               string
 	Header               http.Header
@@ -208,6 +209,7 @@ func copyRetryable(old superAgentRetryable) superAgentRetryable {
 // Note: DoNotClearSuperAgent is forced to "true" after Clone
 func (s *SuperAgent) Clone() *SuperAgent {
 	clone := &SuperAgent{
+		BaseURL:              s.BaseURL,
 		Url:                  s.Url,
 		Method:               s.Method,
 		Header:               http.Header(cloneMapArray(s.Header)),
@@ -233,6 +235,11 @@ func (s *SuperAgent) Clone() *SuperAgent {
 		isClone:              true,
 	}
 	return clone
+}
+
+func (s *SuperAgent) SetBaseURL(baseURL string) *SuperAgent {
+	s.BaseURL = baseURL
+	return s
 }
 
 // Enable the debug mode which logs request/response detail
@@ -275,7 +282,6 @@ func (s *SuperAgent) ClearSuperAgent() {
 	s.RawString = ""
 	s.ForceType = ""
 	s.TargetType = TypeJSON
-	s.Cookies = make([]*http.Cookie, 0)
 	s.Errors = nil
 }
 
@@ -616,6 +622,33 @@ func (s *SuperAgent) TLSClientConfig(config *tls.Config) *SuperAgent {
 	return s
 }
 
+// does a shallow clone of the transport
+func (s *SuperAgent) safeModifyTransport() {
+	if !s.isClone {
+		return
+	}
+	oldTransport := s.Transport
+	s.Transport = &http.Transport{
+		Proxy:                  oldTransport.Proxy,
+		DialContext:            oldTransport.DialContext,
+		Dial:                   oldTransport.Dial,
+		DialTLS:                oldTransport.DialTLS,
+		TLSClientConfig:        oldTransport.TLSClientConfig,
+		TLSHandshakeTimeout:    oldTransport.TLSHandshakeTimeout,
+		DisableKeepAlives:      oldTransport.DisableKeepAlives,
+		DisableCompression:     oldTransport.DisableCompression,
+		MaxIdleConns:           oldTransport.MaxIdleConns,
+		MaxIdleConnsPerHost:    oldTransport.MaxIdleConnsPerHost,
+		IdleConnTimeout:        oldTransport.IdleConnTimeout,
+		ResponseHeaderTimeout:  oldTransport.ResponseHeaderTimeout,
+		ExpectContinueTimeout:  oldTransport.ExpectContinueTimeout,
+		TLSNextProto:           oldTransport.TLSNextProto,
+		MaxResponseHeaderBytes: oldTransport.MaxResponseHeaderBytes,
+		// new in go1.8
+		ProxyConnectHeader: oldTransport.ProxyConnectHeader,
+	}
+}
+
 // Proxy function accepts a proxy url string to setup proxy url for any request.
 // It provides a convenience way to setup proxy which have advantages over usual old ways.
 // One example is you might try to set `http_proxy` environment. This means you are setting proxy up for all the requests.
@@ -661,6 +694,26 @@ func (s *SuperAgent) RedirectPolicy(policy func(req Request, via []Request) erro
 		}
 		return policy(Request(r), vv)
 	}
+	return s
+}
+
+// we don't want to mess up other clones when we modify the client..
+// so unfortantely we need to create a new client
+func (s *SuperAgent) safeModifyHttpClient() {
+	if !s.isClone {
+		return
+	}
+	oldClient := s.Client
+	s.Client = &http.Client{}
+	s.Client.Jar = oldClient.Jar
+	s.Client.Transport = oldClient.Transport
+	s.Client.Timeout = oldClient.Timeout
+	s.Client.CheckRedirect = oldClient.CheckRedirect
+}
+
+func (s *SuperAgent) Timeout(timeout time.Duration) *SuperAgent {
+	s.safeModifyHttpClient()
+	s.Client.Timeout = timeout
 	return s
 }
 
@@ -1399,6 +1452,13 @@ func (s *SuperAgent) MakeRequest() (*http.Request, error) {
 	default:
 		// let's return an error instead of an nil pointer exception here
 		return nil, errors.New("TargetType '" + s.TargetType + "' could not be determined")
+	}
+
+	if !(strings.HasPrefix(s.Url, "http://") || strings.HasPrefix(s.Url, "https://")) {
+		if !strings.HasPrefix(s.Url, "/") {
+			s.Url = "/" + s.Url
+		}
+		s.Url = s.BaseURL + s.Url
 	}
 
 	if req, err = http.NewRequest(s.Method, s.Url, contentReader); err != nil {
